@@ -1,174 +1,137 @@
 
-# Coding Rules (notion-manager)
+# Coding Rules（Notion Management Project）
 
-本ドキュメントは **notion-manager を Colab + GitHub + Notion API で安全・再現性高く運用するためのコーディングルール** を定義する。  
-感情・判断・記憶に依存せず、**常に実行できるコードだけが残る状態**を作ることを目的とする。
+## 目的
 
----
-
-## 1. 基本原則（最重要）
-
-### 1.1 常に「実行可能なコード」を書く
-
-- README 用の疑似コードは禁止
-- 動かないコードは「コード」と呼ばない
-- **実行セル単位で完結していること**
+- Colab 上で **毎回そのまま実行できる**
+- 実行できないコード・中途半端なコードを排除する
+- Notion / JSON / Python の責務を明確に分離する
 
 ---
 
-### 1.2 Colab では `%%writefile` を必ず使う
+## 【最重要ルール】絶対遵守
 
-- ファイルを生成・更新する場合は **必ず `%%writefile`**
-- 口頭説明・擬似コードは禁止
+### 1. 実行可能な形でしかコードを書かない
 
-❌ **NG:**
+- 説明だけのコードは禁止
+- 擬似コード禁止
+- 「あとで埋める」前提のコード禁止
+
+👉 **そのセルを実行すれば結果が出る状態のみ可**
+
+---
+
+### 2. ファイル作成・更新は必ず `%%writefile` を使う
+
+#### ✅ OK
 ```python
-# こんな感じで書いてください
-def foo():
-    pass
+%%writefile plans/example.json
+{ ... }
 ```
 
-✅ **OK:**
+#### ❌ NG
 ```python
-%%writefile foo.py
-def foo():
-    pass
+# このJSONを保存してください
 ```
 
 ---
 
-## 2. 実行コードのルール
+### 3. JSON は「保存 → 読み込み → 実行」の順を厳守
 
-### 2.1 import の順序
-
-1. 標準ライブラリ
-2. サードパーティ
-3. 自作モジュール
-
-**例:**
+#### 正しい流れ
 ```python
-import os
+%%writefile plans/sample.json
+{ ... }
+```
+```python
 import json
-
-import requests
-
 from notion.executor import apply_plan
+
+with open("plans/sample.json", encoding="utf-8") as f:
+    plan = json.load(f)
+
+apply_plan(plan)
 ```
 
-### 2.2 環境変数の扱い
+#### ❌ NG
 
-- コード内で Token / DB ID を直接書かない
-- `os.environ` から取得する
-- 未設定時は明示的にエラーを出す
-```python
-def require_env(key: str) -> str:
-    value = os.getenv(key)
-    if not value:
-        raise RuntimeError(f"環境変数が未設定です: {key}")
-    return value
+- JSONを直接変数に書く
+- 保存せずに apply_plan に渡す
+
+---
+
+### 4. Notion に反映する処理は必ず明示する
+
+- Notion に **反映する** → `apply_plan`
+- **表示するだけ** → `show_tree`
+- **確認のみ** → `fetch_*`
+
+👉 「これは何をするコードか」を曖昧にしない
+
+---
+
+### 5. apply_plan 前提の JSON 構造
+
+#### 必須キー
+
+- `genre`
+- `items`
+
+#### ルール
+
+- `items` は **親 → 子の順**
+- `parent` は title 名で指定
+- 存在しない parent を指定しない
+
+---
+
+### 6. DB構造ルール（再確認）
+```
+1 ホーム（DB外）
+└ 2 ジャンル（select）
+  └ 3 プロジェクト
+    └ 4 ゴール（設計ゴール / 中間ゴール）
+      └ 5 タスク
 ```
 
----
-
-## 3. Notion 操作ルール
-
-### 3.1 DB構造を勝手に推測しない
-
-- プロパティ名は Master DB 定義と完全一致
-- spell / 日本語名を変えない
-
-### 3.2 親子関係（relation）は executor に任せる
-
-- JSON 側では **親は title 名で指定**
-- ID を JSON に書かない
-```json
-{
-  "title": "日次スクリーニングを実装する",
-  "type": "タスク",
-  "parent": "小型株150億以下で監視する仕組みを作る"
-}
-```
-
-### 3.3 登録日・更新日の扱い
-
-- **登録日**: 初回作成時のみセット
-- **更新日**: Notion 側の自動更新に任せる
-- 手動で上書きしない
+- ジャンルは必ず設定する
+- 親ゴールなしで中間ゴール・タスクを作らない
 
 ---
 
-## 4. plan(JSON) 運用ルール
+### 7. 更新系の注意
 
-### 4.1 plan は「実行単位」
-
-- `plan` = 1回の `apply_plan()` 実行
-- DBの状態に依存しない設計を心がける
-
-### 4.2 plan JSON の必須構造
-```json
-{
-  "items": [
-    {
-      "title": "...",
-      "type": "...",
-      "parent": "...",
-      "priority": "...",
-      "status": "..."
-    }
-  ]
-}
-```
-
-- `items` が無い JSON は **即エラー**
-- executor 側で例外を出すのは正しい挙動
+- **登録日**：初回のみ
+- **更新日**：Notion側で自動更新
+- コード側で登録日を上書きしない
 
 ---
 
-## 5. GitHub 運用ルール
+### 8. エラーは「構造違反」として扱う
 
-### 5.1 Colab は「作業場」
+`KeyError` / `ValueError` は  
+👉 JSON or 親子構造のミス
 
-- 正式なコードは GitHub
-- Colab 上で動作確認 → commit → push
-
-### 5.2 commit メッセージ
-
-- 何を直したかを1行で
-- 感情・雑談は禁止
-
-**例:**
-```
-Fix parent resolution and stabilize apply_plan execution
-```
+- コードで握りつぶさない
+- 例外はそのまま出す
 
 ---
 
-## 6. 禁止事項（重要）
+## 禁止事項まとめ
 
-- ❌ 実行できないコードを貼る
-- ❌ `%%writefile` を省略する
-- ❌ 「こういう感じで」という説明
-- ❌ DB構造を無視した JSON
-- ❌ 親ゴール未作成のまま子を登録する
-
----
-
-## 7. 判断に迷ったら
-
-**「このセルをそのまま実行して事故らないか?」**
-
-- **YES** → OK
-- **NO** → 書き直す
+- ❌ `%%writefile` を忘れる
+- ❌ 実行できないコードを書く
+- ❌ JSONを保存せずに使う
+- ❌ 親なしタスクを作る
+- ❌ `genre` を省略する
 
 ---
 
-## 8. このルールの位置づけ
+## 合言葉
 
-- **思考・設計ルール** → `docs/ai_prompt.md`
-- **実装・運用ルール** → `docs/coding_rules.md`
+**「そのセル、今すぐ実行できる？」**
 
-混ぜない。役割を分ける。
+- **YES** なら OK
+- **NO** なら 書き直し
 
 ---
-
-**以上**
