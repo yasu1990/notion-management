@@ -2,6 +2,8 @@ import os
 import requests
 from datetime import datetime, timezone
 
+from notion.validator import validate_plan
+
 NOTION_VERSION = "2022-06-28"
 BASE_URL = "https://api.notion.com/v1"
 
@@ -74,48 +76,38 @@ def build_base_props(item, is_new):
 
 
 def apply_plan(plan: dict):
+    # 🔒 ここで必ず検証
+    validate_plan(plan)
+
     database_id = os.environ.get("NOTION_DATABASE_ID")
     if not database_id:
         raise RuntimeError("NOTION_DATABASE_ID が未設定")
 
     items = plan["items"]
 
-    # 既存ページ取得
     pages = fetch_all_pages(database_id)
     title_to_id = {get_title(p): p["id"] for p in pages}
 
-    # ========== 1パス目：ページ作成 or 更新（relation なし） ==========
+    # 1パス目：create / update
     for item in items:
         title = item["title"]
         existing_id = title_to_id.get(title)
 
         if existing_id:
-            props = build_base_props(item, is_new=False)
-            update_page(existing_id, props)
+            update_page(existing_id, build_base_props(item, is_new=False))
         else:
-            props = build_base_props(item, is_new=True)
-            page_id = create_page(database_id, props)
+            page_id = create_page(database_id, build_base_props(item, is_new=True))
             title_to_id[title] = page_id
 
-    # ========== 2パス目：親子 relation を接続 ==========
+    # 2パス目：relation 接続
     for item in items:
-        parent_title = item.get("parent")
-        if not parent_title:
+        parent = item.get("parent")
+        if not parent:
             continue
 
-        child_id = title_to_id[item["title"]]
-        parent_id = title_to_id.get(parent_title)
-
-        if not parent_id:
-            raise ValueError(f"親ゴールが存在しない: {parent_title}")
-
         update_page(
-            child_id,
-            {
-                "親ゴール": {
-                    "relation": [{"id": parent_id}]
-                }
-            },
+            title_to_id[item["title"]],
+            {"親ゴール": {"relation": [{"id": title_to_id[parent]}]}},
         )
 
     return "OK"
