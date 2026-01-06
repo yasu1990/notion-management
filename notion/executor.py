@@ -5,22 +5,6 @@ from datetime import datetime
 NOTION_VERSION = "2022-06-28"
 
 # =========================
-# 内部ルール定義
-# =========================
-
-TYPE_LEVEL = {
-    "設計ゴール": 4,
-    "中間ゴール": 4,
-    "タスク": 5,
-}
-
-PARENT_REQUIRED = {
-    "設計ゴール": False,
-    "中間ゴール": True,
-    "タスク": True,
-}
-
-# =========================
 # Notion API helpers
 # =========================
 
@@ -85,15 +69,8 @@ def update_page(page_id: str, token: str, properties: dict):
 # =========================
 
 def validate_item(item: dict):
-    item_type = item.get("type")
-
-    if item_type not in TYPE_LEVEL:
-        raise ValueError(f"不正な種別: {item_type}")
-
-    if PARENT_REQUIRED[item_type] and not item.get("parent"):
-        raise ValueError(
-            f"{item_type} には parent（親ゴール）が必須です: {item.get('title')}"
-        )
+    if item["type"] in ["中間ゴール", "タスク"] and not item.get("parent"):
+        raise ValueError(f"{item['type']} には parent が必要: {item['title']}")
 
 # =========================
 # property builder
@@ -144,7 +121,7 @@ def apply_plan(plan: dict):
         if item.get("parent"):
             parent_page = title_map.get(item["parent"])
             if not parent_page:
-                raise ValueError(f"親ゴールが見つかりません: {item['parent']}")
+                raise ValueError(f"親ゴールが存在しない: {item['parent']}")
             item["parent_id"] = parent_page["id"]
 
         props = build_properties(item, now_iso, is_create)
