@@ -1,0 +1,14 @@
+{
+  "domain": "投資",
+  "items": [
+    {
+      "theme": "設計",
+      "type": "知見",
+      "title": "投資OS Phase0完了",
+      "status": "完了",
+      "priority": "高",
+      "knowledge": "基盤構築が完了し、NotionとSQLiteの役割分担が確立した。"
+    }
+  ],
+  "archive_candidates": []
+}
